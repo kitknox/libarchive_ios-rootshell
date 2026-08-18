@@ -126,10 +126,11 @@ func minVersionFlag(for platform: PlatformConfig, arch: String) -> String {
 
 func findIosSystemFramework(for platform: PlatformConfig) -> String? {
     let sourceRoot = FileManager.default.currentDirectoryPath
-    let iosSystemRoot = URL(fileURLWithPath: sourceRoot)
-        .deletingLastPathComponent()
-        .appendingPathComponent("ios_system")
-        .path
+    let iosSystemRoot = ProcessInfo.processInfo.environment["IOS_SYSTEM_SOURCE_DIR"]
+        ?? URL(fileURLWithPath: sourceRoot)
+            .deletingLastPathComponent()
+            .appendingPathComponent("ios_system")
+            .path
 
     let xcframeworkPath = "\(iosSystemRoot)/.build/ios_system/ios_system.xcframework"
     let slicePath = "\(xcframeworkPath)/\(platform.iosSystemSlice)"
@@ -143,28 +144,31 @@ func findIosSystemFramework(for platform: PlatformConfig) -> String? {
 // MARK: - Source Configuration
 
 let sourceRoot = FileManager.default.currentDirectoryPath
+let siblingRoot = URL(fileURLWithPath: sourceRoot).deletingLastPathComponent()
 
 /// Path to the upstream libarchive source checkout (for CMake build + headers)
 let libarchiveSourcePath: String = {
-    return URL(fileURLWithPath: sourceRoot)
-        .deletingLastPathComponent()
+    return ProcessInfo.processInfo.environment["LIBARCHIVE_SOURCE_DIR"]
+        ?? siblingRoot
         .appendingPathComponent("libarchive")
         .path
 }()
 
 /// Path to the upstream xz source checkout (for liblzma headers)
 let xzSourcePath: String = {
-    return URL(fileURLWithPath: sourceRoot)
-        .deletingLastPathComponent()
+    return ProcessInfo.processInfo.environment["XZ_SOURCE_DIR"]
+        ?? siblingRoot
         .appendingPathComponent("xz")
         .path
 }()
 
 /// Path to the xz_ios build (for liblzma.a)
 let xzIosBuildPath: String = {
-    return URL(fileURLWithPath: sourceRoot)
-        .deletingLastPathComponent()
+    let xzIosSourcePath = ProcessInfo.processInfo.environment["XZ_IOS_SOURCE_DIR"]
+        ?? siblingRoot
         .appendingPathComponent("xz_ios")
+        .path
+    return URL(fileURLWithPath: xzIosSourcePath)
         .appendingPathComponent(".build")
         .path
 }()
