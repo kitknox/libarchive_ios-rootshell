@@ -199,9 +199,12 @@ let toolSources: [(subdir: String, file: String)] = [
     ("unzip", "cmdline.c"),
     // libarchive_fe (shared frontend)
     ("libarchive_fe", "lafe_err.c"),
+    ("libarchive_fe", "lafe_explicit_bzero.c"),
+    ("libarchive_fe", "lafe_fnmatch.c"),
     ("libarchive_fe", "lafe_getline.c"),
     ("libarchive_fe", "line_reader.c"),
     ("libarchive_fe", "passphrase.c"),
+    ("libarchive_fe", "lafe_setmode.c"),
 ]
 
 /// Globals file
@@ -422,7 +425,7 @@ func createFrameworkBundle(
             <key>CFBundlePackageType</key>
             <string>FMWK</string>
             <key>CFBundleShortVersionString</key>
-            <string>3.9.0</string>
+            <string>3.8.10</string>
             <key>CFBundleSupportedPlatforms</key>
             <array>
                 <string>\(platform.supportedPlatformKey)</string>
@@ -616,7 +619,7 @@ let releaseNotes = """
 
     ## Build Info
 
-    - libarchive version: 3.9.0
+    - libarchive version: 3.8.10
     - Tools: bsdtar, bsdcat, bsdcpio, bsdunzip
     - libarchive built from upstream source via CMake
     - Tool sources patched for __thread + ios_system integration

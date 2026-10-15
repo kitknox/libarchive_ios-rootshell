@@ -318,7 +318,11 @@ again:
 int
 owner_parse(const char *spec, struct cpio_owner *owner, const char **errmsg)
 {
+#if TARGET_OS_IPHONE
+	static __thread char errbuff[128];
+#else
 	static char errbuff[128];
+#endif
 	const char *u, *ue, *g;
 
 	owner->uid = -1;

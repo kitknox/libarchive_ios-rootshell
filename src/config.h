@@ -57,10 +57,10 @@
 #define HAVE_NL_LANGINFO 1
 
 // Version strings for libarchive tools
-#define BSDTAR_VERSION_STRING "3.9.0"
-#define BSDCAT_VERSION_STRING "3.9.0"
-#define BSDCPIO_VERSION_STRING "3.9.0"
-#define BSDUNZIP_VERSION_STRING "3.9.0"
+#define BSDTAR_VERSION_STRING "3.8.10"
+#define BSDCAT_VERSION_STRING "3.8.10"
+#define BSDCPIO_VERSION_STRING "3.8.10"
+#define BSDUNZIP_VERSION_STRING "3.8.10"
 
 // Not on iOS
 // #define HAVE_LIBACL 1

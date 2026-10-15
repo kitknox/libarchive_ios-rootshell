@@ -9,6 +9,8 @@
 #include "bsdunzip_platform.h"
 
 #include "la_queue.h"
+#include "lafe_explicit_bzero.h"
+#include "lafe_fnmatch.h"
 #include "lafe_getline.h"
 #ifdef HAVE_SYS_STAT_H
 #include <sys/stat.h>
@@ -44,6 +46,12 @@
 #endif
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
+#elif defined(HAVE_IO_H)
+/*
+ * Windows has no <unistd.h>; close(), isatty(), open() and write() are
+ * made available by including io.h instead.
+ */
+#include <io.h>
 #endif
 #if ((!defined(HAVE_UTIMENSAT) && defined(HAVE_LUTIMES)) || \
     (!defined(HAVE_FUTIMENS) && defined(HAVE_FUTIMES)))
@@ -51,13 +59,17 @@
 #include <sys/time.h>
 #endif
 #endif
-#ifdef HAVE_GETOPT_OPTRESET
-#include <getopt.h>
-#endif
 
 #include "bsdunzip.h"
 #include "passphrase.h"
 #include "lafe_err.h"
+
+#ifndef O_BINARY
+#define O_BINARY	0
+#endif
+#ifndef O_CLOEXEC
+#define O_CLOEXEC	0
+#endif
 
 #if TARGET_OS_IPHONE
 /* command-line options — __thread for multi-tab safety */
@@ -139,6 +151,9 @@ int bsdunzip_optind;
 #if TARGET_OS_IPHONE
 static __thread int noeol;
 static __thread char *passphrase_buf;
+/* resources unzip() owns, released if exit() longjmps out of it */
+static __thread int unzip_ios_fd = -1;
+static __thread char *unzip_ios_fnbuf;
 #else
 static int noeol;
 static char *passphrase_buf;
@@ -178,6 +193,7 @@ errorx(const char *fmt, ...)
 	exit(EXIT_FAILURE);
 }
 
+#if defined(HAVE_LCHMOD) || defined(HAVE_UTIMENSAT) || defined(HAVE_LUTIMES)
 /* non-fatal error message + errno */
 static void
 warning(const char *fmt, ...)
@@ -193,6 +209,7 @@ warning(const char *fmt, ...)
 	va_end(ap);
 	fprintf(stderr, ": %s\n", strerror(errno));
 }
+#endif
 
 /* non-fatal error message, no errno */
 static void
@@ -344,12 +361,8 @@ match_pattern(struct pattern_list *list, const char *str)
 	struct pattern *entry;
 
 	STAILQ_FOREACH(entry, list, link) {
-#ifdef HAVE_FNMATCH
 		if (fnmatch(entry->pattern, str, C_opt ? FNM_CASEFOLD : 0) == 0)
 			return (1);
-#else
-#error "Unsupported platform: fnmatch() is required"
-#endif
 	}
 	return (0);
 }
@@ -369,9 +382,33 @@ accept_pathname(const char *pathname)
 	return (1);
 }
 
+/* System call to create a directory. */
+static int
+system_mkdir(const char *pathname, int mode)
+{
+#if defined(_WIN32) && !defined(__CYGWIN__)
+	(void)mode; /* UNUSED */
+	return _mkdir(pathname);
+#else
+	return mkdir(pathname, mode);
+#endif
+}
+
+static void
+system_unlink(const char *pathname) {
+#if defined(_WIN32) && !defined(__CYGWIN__)
+	if (unlink(pathname) == -1) {
+		/* Windows treats directory symbolic links specially. */
+		rmdir(pathname);
+	}
+#else
+	(void)unlink(pathname);
+#endif
+}
+
 /*
  * Create the specified directory with the specified mode, taking certain
- * precautions on they way.
+ * precautions on the way.
  */
 static void
 make_dir(const char *path, int mode)
@@ -389,14 +426,9 @@ make_dir(const char *path, int mode)
 		 * even compromise (if this non-directory happens to be a
 		 * symlink to somewhere unsafe), so we don't.
 		 */
-
-		/*
-		 * Don't check unlink() result; failure will cause mkdir()
-		 * to fail later, which we will catch.
-		 */
-		(void)unlink(path);
+		system_unlink(path);
 	}
-	if (mkdir(path, (mode_t)mode) != 0 && errno != EEXIST)
+	if (system_mkdir(path, (mode_t)mode) != 0 && errno != EEXIST)
 		error("mkdir('%s')", path);
 }
 
@@ -411,32 +443,32 @@ make_parent(char *path)
 {
 	struct stat sb;
 	char *sep;
+	size_t len;
 
+	/* Retrieve string length of parent directory. */
 	sep = strrchr(path, '/');
 	if (sep == NULL || sep == path)
 		return;
-	*sep = '\0';
-	if (lstat(path, &sb) == 0) {
-		if (S_ISDIR(sb.st_mode)) {
-			*sep = '/';
-			return;
-		}
-		unlink(path);
-	}
-	make_parent(path);
-	mkdir(path, 0755);
-	*sep = '/';
+	len = sep - path;
 
-#if 0
-	for (sep = path; (sep = strchr(sep, '/')) != NULL; sep++) {
-		/* root in case of absolute d_arg */
-		if (sep == path)
-			continue;
+	/* Find deepest already existing directory. */
+	do {
 		*sep = '\0';
-		make_dir(path, 0755);
-		*sep = '/';
+		if (lstat(path, &sb) == 0) {
+			if (S_ISDIR(sb.st_mode)) {
+				*sep = '/';
+				break;
+			}
+			system_unlink(path);
+		}
+		sep = strrchr(path, '/');
+	} while (sep != NULL && sep != path);
+
+	/* Create missing directories and restore path. */
+	while (strlen(path) <= len) {
+		system_mkdir(path, 0755);
+		path[strlen(path)] = '/';
 	}
-#endif
 }
 
 /*
@@ -479,7 +511,11 @@ extract_dir(struct archive *a, struct archive_entry *e, const char *path)
 	ac(archive_read_data_skip(a));
 }
 
+#if TARGET_OS_IPHONE
+static __thread unsigned char buffer[8192];
+#else
 static unsigned char buffer[8192];
+#endif
 static char spinner[] = { '|', '/', '-', '\\' };
 
 static int
@@ -501,7 +537,7 @@ handle_existing_file(char **path)
 			/* FALLTHROUGH */
 		case 'y':
 		case 'Y':
-			(void)unlink(*path);
+			system_unlink(*path);
 			return 1;
 		case 'N':
 			n_opt = 1;
@@ -701,10 +737,10 @@ recheck:
 #endif
 			    ))
 				return;
-			(void)unlink(*path);
+			system_unlink(*path);
 		} else if (o_opt) {
 			/* overwrite */
-			(void)unlink(*path);
+			system_unlink(*path);
 		} else if (n_opt) {
 			/* do not overwrite */
 			return;
@@ -755,7 +791,7 @@ recheck:
 		return;
 	}
 
-	if ((fd = open(*path, O_RDWR|O_CREAT|O_TRUNC, mode)) < 0)
+	if ((fd = open(*path, O_RDWR|O_CREAT|O_TRUNC|O_BINARY, mode)) < 0)
 		error("open('%s')", *path);
 
 	info(" extracting: %s", *path);
@@ -781,6 +817,37 @@ recheck:
 		error("close('%s')", *path);
 }
 
+static int
+pathname_is_insecure(const char* pathname)
+{
+	size_t len = strlen(pathname);
+#if defined(_WIN32) && !defined(__CYGWIN__)
+	const char *p;
+#endif
+
+	if (pathname[0] == '/' ||
+	    strcmp(pathname, "..") == 0 ||
+	    strncmp(pathname, "../", 3) == 0 ||
+	    strstr(pathname, "/../") != NULL ||
+	    (len >= 3 && strcmp(pathname + len - 3, "/..") == 0))
+		return 1;
+
+#if defined(_WIN32) && !defined(__CYGWIN__)
+	if (pathname[0] == '\\' ||
+	    (isalpha((unsigned char)pathname[0]) && pathname[1] == ':'))
+		return 1;
+
+	/* Windows treats both slash characters as path separators. */
+	for (p = pathname; *p != '\0'; ++p) {
+		if (p[0] == '.' && p[1] == '.' &&
+		    (p[2] == '\0' || p[2] == '/' || p[2] == '\\') &&
+		    (p == pathname || p[-1] == '/' || p[-1] == '\\'))
+			return 1;
+	}
+#endif
+	return 0;
+}
+
 /*
  * Extract a zipfile entry: first perform some sanity checks to ensure
  * that it is either a directory or a regular file and that the path is
@@ -800,6 +867,7 @@ static void
 extract(struct archive *a, struct archive_entry *e)
 {
 	char *pathname, *realpathname;
+	const char *linktarget;
 	mode_t filetype;
 	char *p, *q;
 
@@ -811,10 +879,17 @@ extract(struct archive *a, struct archive_entry *e)
 	filetype = archive_entry_filetype(e);
 
 	/* sanity checks */
-	if (pathname[0] == '/' ||
-	    strncmp(pathname, "../", 3) == 0 ||
-	    strstr(pathname, "/../") != NULL) {
+	if (pathname_is_insecure(pathname)) {
 		warningx("skipping insecure entry '%s'", pathname);
+		ac(archive_read_data_skip(a));
+		free(pathname);
+		return;
+	}
+
+	if (S_ISLNK(filetype) &&
+	    ((linktarget = archive_entry_symlink(e)) != NULL) &&
+	    pathname_is_insecure(linktarget)) {
+		warningx("skipping insecure symlink '%s' to '%s'", pathname, linktarget);
 		ac(archive_read_data_skip(a));
 		free(pathname);
 		return;
@@ -921,9 +996,9 @@ list(struct archive *a, struct archive_entry *e)
 	mtime = archive_entry_mtime(e);
 	tm = localtime(&mtime);
 	if (*y_str)
-		strftime(buf, sizeof(buf), "%m-%d-%Y %R", tm);
+		strftime(buf, sizeof(buf), "%m-%d-%Y %H:%M", tm);
 	else
-		strftime(buf, sizeof(buf), "%m-%d-%y %R", tm);
+		strftime(buf, sizeof(buf), "%m-%d-%y %H:%M", tm);
 
 	pathname = archive_entry_pathname(e);
 	if (!pathname)
@@ -1016,7 +1091,8 @@ unzip(const char *fn)
 {
 	struct archive *a;
 	struct archive_entry *e;
-	int ret;
+	char *buf;
+	int fd, ret;
 	uintmax_t total_size, file_count, error_count;
 
 	if ((a = archive_read_new()) == NULL)
@@ -1033,7 +1109,33 @@ unzip(const char *fn)
 		archive_read_set_passphrase_callback(a, NULL,
 			&passphrase_callback);
 
-	ac(archive_read_open_filename(a, fn, 8192));
+	buf = NULL;
+	fd = open(fn, O_RDONLY | O_BINARY | O_CLOEXEC);
+	if (fd == -1) {
+		size_t s;
+
+		s = strlen(fn) + 5;
+		buf = malloc(s);
+		if (buf == NULL)
+			error("Failed to construct filename");
+		if (snprintf(buf, s, "%s.zip", fn) < 0)
+			errorx("Failed to construct filename");
+		fd = open(buf, O_RDONLY | O_BINARY | O_CLOEXEC);
+		if (fd == -1) {
+			if (snprintf(buf, s, "%s.ZIP", fn) < 0)
+				errorx("Failed to construct filename");
+			fd = open(buf, O_RDONLY | O_BINARY | O_CLOEXEC);
+		}
+		if (fd != -1)
+			fn = buf;
+	}
+#if TARGET_OS_IPHONE
+	unzip_ios_fnbuf = buf;
+	unzip_ios_fd = fd;
+#endif
+	if (fd == -1)
+		errorx("Failed to open '%s'", fn);
+	ac(archive_read_open_fd(a, fd, 64 * 1024));
 
 	if (!zipinfo_mode) {
 		if (!p_opt && !q_opt)
@@ -1086,11 +1188,15 @@ unzip(const char *fn)
 		}
 	}
 
-	ac(archive_read_free(a));
+	ac(archive_read_close(a));
+	archive_read_free(a);
 
 	if (passphrase_buf != NULL) {
-		memset(passphrase_buf, 0, PPBUFF_SIZE);
+		explicit_bzero(passphrase_buf, PPBUFF_SIZE);
 		free(passphrase_buf);
+#if TARGET_OS_IPHONE
+		passphrase_buf = NULL;
+#endif
 	}
 
 	if (t_opt) {
@@ -1102,6 +1208,13 @@ unzip(const char *fn)
 			       fn);
 		}
 	}
+
+	close(fd);
+	free(buf);
+#if TARGET_OS_IPHONE
+	unzip_ios_fd = -1;
+	unzip_ios_fnbuf = NULL;
+#endif
 }
 
 static void
@@ -1203,7 +1316,8 @@ getopts(int argc, char *argv[])
 		case 'Z':
 			zipinfo_mode = 1;
 			if (bsdunzip->argument != NULL &&
-			    strcmp(bsdunzip->argument, "1") == 0) {
+			    (strcmp(bsdunzip->argument, "1") == 0 ||
+			    strcmp(bsdunzip->argument, "-1") == 0)) {
 				Z1_opt = 1;
 			}
 			break;
@@ -1257,7 +1371,7 @@ main(int argc, char *argv[])
 	unzip_exclude_mode = 0; bsdunzip_optind = 0;
 	noeol = 0;
 	if (passphrase_buf != NULL) {
-		memset(passphrase_buf, 0, 1024);
+		explicit_bzero(passphrase_buf, PPBUFF_SIZE);
 		free(passphrase_buf);
 		passphrase_buf = NULL;
 	}
@@ -1271,8 +1385,15 @@ main(int argc, char *argv[])
 	unzip_patterns_initialized = 1;
 	optind = 1;
 	optreset = 1;
-	if (setjmp(libarchive_ios_exit_jmpbuf) != 0)
+	if (setjmp(libarchive_ios_exit_jmpbuf) != 0) {
+		if (unzip_ios_fd != -1) {
+			close(unzip_ios_fd);
+			unzip_ios_fd = -1;
+		}
+		free(unzip_ios_fnbuf);
+		unzip_ios_fnbuf = NULL;
 		return libarchive_ios_exit_status;
+	}
 #endif
 
 #if defined(HAVE_SIGACTION) && defined(SIGCHLD)
@@ -1357,6 +1478,13 @@ main(int argc, char *argv[])
 
 	if (n_opt + o_opt + u_opt > 1)
 		errorx("-n, -o and -u are contradictory");
+
+#if defined(_WIN32) && !defined(__CYGWIN__)
+	if (c_opt || p_opt) {
+		if (_setmode(STDOUT_FILENO, _O_BINARY) == -1)
+			errorx("unable to set binary output mode");
+	}
+#endif
 
 	unzip(zipfile);
 

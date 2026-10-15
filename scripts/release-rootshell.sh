@@ -14,7 +14,7 @@ libarchive_repo="${LIBARCHIVE_SOURCE_DIR:-$sibling_root/libarchive}"
 xz_repo="${XZ_SOURCE_DIR:-$sibling_root/xz}"
 xz_ios_repo="${XZ_IOS_SOURCE_DIR:-$sibling_root/xz_ios}"
 ios_system_repo="${IOS_SYSTEM_SOURCE_DIR:-$sibling_root/ios_system}"
-libarchive_revision="4613cc9d7926bc175d25ca07ddecfee22f0d45fa"
+libarchive_revision="0c48412be2d94afe1859a807ea7896a18d8900bd"
 xz_revision="cdae0df31e4c2dfb1e885941cd1998e5a2b6e39d"
 xz_ios_revision="d15706de071d154eaf55fd6e6010285c40428170"
 ios_system_revision="8f84ebfc7ee44cb05402cabdd1a82b4214a173cd"
@@ -83,7 +83,7 @@ git -C "$ios_system_repo" worktree add --detach "$temp_root/ios_system" "$ios_sy
 echo "Building ios_system at $ios_system_revision"
 (
     cd "$temp_root/ios_system"
-    swift run --package-path xcfs build ios_system
+    xcrun swift run --package-path xcfs build ios_system
 )
 
 echo "Building xz_ios at $xz_ios_revision"
@@ -91,7 +91,7 @@ echo "Building xz_ios at $xz_ios_revision"
     cd "$temp_root/xz_ios"
     IOS_SYSTEM_SOURCE_DIR="$temp_root/ios_system" \
     XZ_SOURCE_DIR="$temp_root/xz" \
-    swift run --package-path xcfs build
+    xcrun swift run --package-path xcfs build
 )
 
 echo "Building libarchive_ios at $libarchive_revision"
@@ -99,7 +99,7 @@ LIBARCHIVE_SOURCE_DIR="$temp_root/libarchive" \
 XZ_SOURCE_DIR="$temp_root/xz" \
 XZ_IOS_SOURCE_DIR="$temp_root/xz_ios" \
 IOS_SYSTEM_SOURCE_DIR="$temp_root/ios_system" \
-swift run --package-path xcfs build
+xcrun swift run --package-path xcfs build
 
 xcframework="$repo_root/.build/libarchive_ios.xcframework"
 asset="$repo_root/.build/libarchive_ios.xcframework.zip"
@@ -141,13 +141,13 @@ for symbol in lzma_auto_decoder lzma_easy_encoder archive_read_support_filter_xz
     }
 done
 
-checksum="$(swift package compute-checksum "$asset")"
+checksum="$(xcrun swift package compute-checksum "$asset")"
 VERSION="$version" CHECKSUM="$checksum" perl -0pi -e '
     s{/releases/download/v[^/]+/libarchive_ios\.xcframework\.zip}{/releases/download/$ENV{VERSION}/libarchive_ios.xcframework.zip};
     s{checksum: "[a-f0-9]+"}{checksum: "$ENV{CHECKSUM}"};
 ' Package.swift
 
-swift package dump-package >/dev/null
+xcrun swift package dump-package >/dev/null
 git diff --check
 git add Package.swift
 if ! git diff --cached --quiet; then
