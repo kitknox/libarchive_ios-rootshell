@@ -17,7 +17,7 @@ ios_system_repo="${IOS_SYSTEM_SOURCE_DIR:-$sibling_root/ios_system}"
 libarchive_revision="0c48412be2d94afe1859a807ea7896a18d8900bd"
 xz_revision="cdae0df31e4c2dfb1e885941cd1998e5a2b6e39d"
 xz_ios_revision="d15706de071d154eaf55fd6e6010285c40428170"
-ios_system_revision="8f84ebfc7ee44cb05402cabdd1a82b4214a173cd"
+ios_system_revision="d26afc264a78723afba6286695eadba5184dd7af"
 temp_root=""
 
 cleanup() {

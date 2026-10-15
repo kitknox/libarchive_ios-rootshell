@@ -40,7 +40,7 @@ pinned revisions, build ios_system and xz_ios, and then build libarchive_ios:
 git -C ../libarchive checkout v3.8.10
 git -C ../xz checkout v5.7.1alpha
 git -C ../xz_ios checkout v0.1.0
-git -C ../ios_system checkout v0.1.0
+git -C ../ios_system checkout v0.1.1
 cd ../ios_system
 xcrun swift run --package-path xcfs build ios_system
 cd ../xz_ios
