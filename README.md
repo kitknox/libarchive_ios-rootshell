@@ -5,7 +5,7 @@ as a public Swift binary package. It preserves the source and behavior already
 used by rootshell; it is not an automatically updated mirror of upstream
 libarchive.
 
-- Upstream base: [`libarchive/libarchive@v3.8.10`](https://github.com/libarchive/libarchive/releases/tag/v3.8.10) (`0c48412b`)
+- Upstream base: [`libarchive/libarchive@v3.8.11`](https://github.com/libarchive/libarchive/releases/tag/v3.8.11) (`03036ffa`)
 - Binary product and module: `libarchive_ios`
 - C entry points: `tar_main`, `cpio_main`, `bsdcat_main`, and `unzip_main`
 - Commands: `tar`, `bsdtar`, `cpio`, `bsdcpio`, `bsdcat`, `unzip`, and `bsdunzip`
@@ -20,14 +20,14 @@ and embed a compatible ios_system product.
 
 ## Swift Package Manager
 
-Add this repository with an exact dependency on `0.1.1`, then link the
+Add this repository with an exact dependency on `0.1.2`, then link the
 `libarchive_ios` product. The package downloads the public
 `libarchive_ios.xcframework.zip` release asset.
 
 ```swift
 .package(
     url: "https://github.com/kitknox/libarchive_ios-rootshell.git",
-    exact: "0.1.1"
+    exact: "0.1.2"
 )
 ```
 
@@ -37,10 +37,10 @@ Check out libarchive, xz, xz_ios, and ios_system beside this repository at the
 pinned revisions, build ios_system and xz_ios, and then build libarchive_ios:
 
 ```bash
-git -C ../libarchive checkout v3.8.10
+git -C ../libarchive checkout v3.8.11
 git -C ../xz checkout v5.7.1alpha
 git -C ../xz_ios checkout v0.1.0
-git -C ../ios_system checkout v0.1.1
+git -C ../ios_system checkout v0.1.2
 cd ../ios_system
 xcrun swift run --package-path xcfs build ios_system
 cd ../xz_ios
@@ -57,7 +57,7 @@ ignored `.build` directory.
 Release maintainers publish a clean, audited build with:
 
 ```bash
-./scripts/release-rootshell.sh v0.1.1
+./scripts/release-rootshell.sh v0.1.2
 ```
 
 The release script uses detached worktrees at the pinned source revisions, so

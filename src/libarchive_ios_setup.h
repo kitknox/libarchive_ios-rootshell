@@ -25,12 +25,12 @@
 extern __thread jmp_buf libarchive_ios_exit_jmpbuf;
 extern __thread int libarchive_ios_exit_status;
 
-// Override exit() with longjmp back to *_main().
-// fflush(NULL) flushes ALL open streams — critical because longjmp would
-// skip the normal C runtime flush that a real exit() performs.
+// Override exit() with longjmp back to *_main(), flushing this session's
+// streams first. Never fflush(NULL): its unlocked walk races other threads'
+// fopen/fdopen re-initializing FILE locks and deadlocks the app's stdio.
 #undef exit
 #define exit(status) \
-    do { fflush(NULL); libarchive_ios_exit_status = (status); longjmp(libarchive_ios_exit_jmpbuf, 1); } while(0)
+    do { fflush(thread_stdout); fflush(thread_stderr); libarchive_ios_exit_status = (status); longjmp(libarchive_ios_exit_jmpbuf, 1); } while(0)
 
 // Redirect stdio FILE* to ios_system's per-thread streams
 #undef stdin
@@ -80,6 +80,16 @@ static inline int libarchive_ios_printf(const char *fmt, ...) {
 // so CTRL-C cancellation is delivered to the running tool.
 #undef signal
 #define signal(sig, func) ios_signal(sig, func)
+
+// Stdio archives (NULL/"" names) and fd 1 output use the session's streams,
+// not the process's fds 0/1 (libarchive_ios_globals.c).
+struct archive;
+extern int libarchive_ios_read_open_filename(struct archive *, const char *, size_t);
+extern int libarchive_ios_write_open_filename(struct archive *, const char *);
+extern int libarchive_ios_read_data_into_fd(struct archive *, int);
+#define archive_read_open_filename libarchive_ios_read_open_filename
+#define archive_write_open_filename libarchive_ios_write_open_filename
+#define archive_read_data_into_fd libarchive_ios_read_data_into_fd
 
 // iOS reset function declarations (defined in patched tool sources)
 extern void cpio_cmdline_ios_reset(void);

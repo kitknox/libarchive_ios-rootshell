@@ -425,7 +425,7 @@ func createFrameworkBundle(
             <key>CFBundlePackageType</key>
             <string>FMWK</string>
             <key>CFBundleShortVersionString</key>
-            <string>3.8.10</string>
+            <string>3.8.11</string>
             <key>CFBundleSupportedPlatforms</key>
             <array>
                 <string>\(platform.supportedPlatformKey)</string>
@@ -619,7 +619,7 @@ let releaseNotes = """
 
     ## Build Info
 
-    - libarchive version: 3.8.10
+    - libarchive version: 3.8.11
     - Tools: bsdtar, bsdcat, bsdcpio, bsdunzip
     - libarchive built from upstream source via CMake
     - Tool sources patched for __thread + ios_system integration
