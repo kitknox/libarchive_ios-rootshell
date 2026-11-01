@@ -14,8 +14,8 @@ let package = Package(
     targets: [
         .binaryTarget(
             name: "libarchive_ios",
-            url: "https://github.com/kitknox/libarchive_ios-rootshell/releases/download/v0.1.1/libarchive_ios.xcframework.zip",
-            checksum: "30c21b6f7091fcd1eb9eb590e14097e65781de61f82f19f67771854f61c95dc5"
+            url: "https://github.com/kitknox/libarchive_ios-rootshell/releases/download/v0.1.2/libarchive_ios.xcframework.zip",
+            checksum: "e9d3dd0dd377509d1424471ef7a5b0c9dd1c7013517a4996a5e88f4e41de51fd"
         ),
     ]
 )
